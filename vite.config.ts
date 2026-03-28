@@ -36,15 +36,17 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB，容纳 cuv.json
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/bolls\.life\/get-chapter\/.*/i,
+            // 缓存完整圣经数据文件
+            urlPattern: /\/cuv\.json$/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'bible-chapters',
+              cacheName: 'bible-data',
               expiration: {
-                maxEntries: 1200,
+                maxEntries: 1,
                 maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
               },
               cacheableResponse: {

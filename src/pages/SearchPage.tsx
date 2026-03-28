@@ -22,7 +22,7 @@ function highlightText(text: string, query: string): React.ReactNode {
 }
 
 export const SearchPage: React.FC<SearchPageProps> = ({ onNavigate }) => {
-  const { setLocation } = useBibleStore();
+  const { setLocation, currentVersion } = useBibleStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,12 +37,12 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onNavigate }) => {
     setLoading(true);
     setSearched(true);
     try {
-      const res = await searchVerses(q, 80);
+      const res = await searchVerses(q, 80, currentVersion);
       setResults(res);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentVersion]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch(query);

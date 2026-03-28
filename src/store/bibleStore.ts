@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { BibleVersion } from '@/data/bibleLoader';
 
 export interface Bookmark {
   id: string;
@@ -23,6 +24,12 @@ interface BibleStore {
   currentBookId: string;
   currentChapter: number;
   setLocation: (bookId: string, chapter: number) => void;
+
+  // 译本
+  currentVersion: BibleVersion;
+  setVersion: (v: BibleVersion) => void;
+  compareMode: boolean;
+  setCompareMode: (on: boolean) => void;
 
   // 主题
   theme: 'light' | 'dark' | 'system';
@@ -57,6 +64,11 @@ export const useBibleStore = create<BibleStore>()(
         set({ currentBookId: bookId, currentChapter: chapter });
         get().addToHistory(bookId, chapter);
       },
+
+      currentVersion: 'cunps',
+      setVersion: (v) => set({ currentVersion: v }),
+      compareMode: false,
+      setCompareMode: (on) => set({ compareMode: on }),
 
       theme: 'system',
       setTheme: (theme) => {

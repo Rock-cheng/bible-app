@@ -36,17 +36,17 @@ export default defineConfig({
         ],
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB，容纳 cuv.json
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024, // 8MB，容纳两个版本的数据
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
         runtimeCaching: [
           {
-            // 缓存完整圣经数据文件
-            urlPattern: /\/cuv\.json$/i,
+            // 缓存两个圣经数据文件
+            urlPattern: /\/(cuv|cunps)\.json$/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'bible-data',
               expiration: {
-                maxEntries: 1,
+                maxEntries: 2,
                 maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
               },
               cacheableResponse: {

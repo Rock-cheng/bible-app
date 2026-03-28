@@ -10,65 +10,65 @@ export interface ChapterData {
   verses: VerseData[];
 }
 
-// 完整圣经数据（懒加载，首次使用时从 public/cuv.json 获取）
-let fullBibleData: Record<string, Record<string, VerseData[]>> | null = null;
-let loadingPromise: Promise<void> | null = null;
+// 支持的版本列表
+export type BibleVersion = 'cunps' | 'cuv';
 
-async function ensureBibleLoaded(): Promise<void> {
-  if (fullBibleData) return;
-  if (loadingPromise) return loadingPromise;
+export const BIBLE_VERSIONS: Record<BibleVersion, { label: string; file: string; lang: 'zh-hans' | 'zh-hant' }> = {
+  cunps: { label: '新标点和合本（简体）', file: '/cunps.json', lang: 'zh-hans' },
+  cuv:   { label: '和合本（繁体）',        file: '/cuv.json',   lang: 'zh-hant' },
+};
 
-  loadingPromise = (async () => {
+// 各版本数据缓存
+const bibleDataCache: Partial<Record<BibleVersion, Record<string, Record<string, VerseData[]>> | null>> = {};
+const loadingPromises: Partial<Record<BibleVersion, Promise<void>>> = {};
+
+async function ensureVersionLoaded(version: BibleVersion): Promise<void> {
+  if (bibleDataCache[version] !== undefined) return;
+  if (loadingPromises[version]) return loadingPromises[version];
+
+  loadingPromises[version] = (async () => {
     try {
-      const response = await fetch('/cuv.json');
-      if (!response.ok) throw new Error('Failed to fetch cuv.json');
-      fullBibleData = await response.json();
+      const { file } = BIBLE_VERSIONS[version];
+      const response = await fetch(file);
+      if (!response.ok) throw new Error(`Failed to fetch ${file}`);
+      bibleDataCache[version] = await response.json();
     } catch (e) {
-      console.error('圣经数据加载失败:', e);
-      fullBibleData = {};
+      console.error(`圣经数据加载失败 (${version}):`, e);
+      bibleDataCache[version] = null;
     }
   })();
 
-  return loadingPromise;
+  return loadingPromises[version];
 }
 
-// 内存缓存
+// 内存缓存 key: `version_bookId_chapter`
 const chapterCache = new Map<string, VerseData[]>();
 
-function getCacheKey(bookId: string, chapter: number): string {
-  return `${bookId}_${chapter}`;
-}
-
 // 获取章节数据
-export async function getChapterData(bookId: string, chapterNum: number): Promise<VerseData[]> {
-  const key = getCacheKey(bookId, chapterNum);
+export async function getChapterData(
+  bookId: string,
+  chapterNum: number,
+  version: BibleVersion = 'cunps'
+): Promise<VerseData[]> {
+  const key = `${version}_${bookId}_${chapterNum}`;
+  if (chapterCache.has(key)) return chapterCache.get(key)!;
 
-  // 检查内存缓存
-  if (chapterCache.has(key)) {
-    return chapterCache.get(key)!;
-  }
+  await ensureVersionLoaded(version);
 
-  // 加载完整数据
-  await ensureBibleLoaded();
-
-  const bookData = fullBibleData?.[bookId];
-  if (bookData) {
-    const verses = bookData[String(chapterNum)];
+  const data = bibleDataCache[version];
+  if (data) {
+    const verses = data[bookId]?.[String(chapterNum)];
     if (verses && verses.length > 0) {
       chapterCache.set(key, verses);
       return verses;
     }
   }
 
-  // 降级：生成占位提示
   const book = BIBLE_BOOKS_META.find(b => b.id === bookId);
-  const placeholder: VerseData[] = [
-    { verse: 1, text: `${book?.name || bookId} 第${chapterNum}章数据暂时无法加载。` },
-  ];
-  return placeholder;
+  return [{ verse: 1, text: `${book?.name || bookId} 第${chapterNum}章数据暂时无法加载。` }];
 }
 
-// 全文搜索（在已加载数据中搜索）
+// 全文搜索
 export interface SearchResult {
   bookId: string;
   bookName: string;
@@ -77,17 +77,22 @@ export interface SearchResult {
   text: string;
 }
 
-export async function searchVerses(query: string, limit = 100): Promise<SearchResult[]> {
+export async function searchVerses(
+  query: string,
+  limit = 100,
+  version: BibleVersion = 'cunps'
+): Promise<SearchResult[]> {
   if (!query.trim()) return [];
 
-  await ensureBibleLoaded();
+  await ensureVersionLoaded(version);
+
+  const data = bibleDataCache[version];
+  if (!data) return [];
 
   const results: SearchResult[] = [];
   const q = query.trim();
 
-  if (!fullBibleData) return results;
-
-  for (const [bookId, chapters] of Object.entries(fullBibleData)) {
+  for (const [bookId, chapters] of Object.entries(data)) {
     const book = BIBLE_BOOKS_META.find(b => b.id === bookId);
     if (!book) continue;
 

@@ -16,16 +16,31 @@ const FONT_SIZE_MAP = {
 };
 
 // ─────────────────────────────────────────────
+// 规范化文字：用于比较（忽略引号样式差异和"神"前空格）
+// ─────────────────────────────────────────────
+function normalizeForCompare(text: string): string {
+  return text
+    // 统一弯引号/直角引号 → 直角引号（以新译本的「」『』为基准）
+    .replace(/"/g, '「').replace(/"/g, '」')
+    .replace(/'/g, '『').replace(/'/g, '』')
+    // 去掉"神"、"主"、"耶和华"等前面的全角/半角空格（新译本排版习惯）
+    .replace(/[\u00a0\u3000\u2003\u2002\u2001 ]\s*(?=[神主基督耶和华圣灵])/g, '');
+}
+
+// ─────────────────────────────────────────────
 // 差异计算：找出两段文字的不同部分
 // 基于字符级别的 diff，返回 token 数组 {text, diff: bool}
 // ─────────────────────────────────────────────
 function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean }> {
-  if (a === b) return [{ text: a, diff: false }];
+  // 先规范化再比
+  const na = normalizeForCompare(a);
+  const nb = normalizeForCompare(b);
+  if (na === nb) return [{ text: a, diff: false }];
 
-  // 简单方法：按字符分割，找最长公共子序列（LCS）
+  // 用规范化文本做 LCS，再映射回原文显示
   // 对于短文本（圣经节）性能足够
-  const aChars = [...a];
-  const bChars = [...b];
+  const aChars = [...na];
+  const bChars = [...nb];
   const la = aChars.length;
   const lb = bChars.length;
 
@@ -39,7 +54,7 @@ function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean 
     }
   }
 
-  // 回溯找 LCS
+  // 回溯找 LCS（基于规范化字符的 diff/no-diff 标记）
   const result: Array<{ text: string; diff: boolean }> = [];
   let i = la, j = lb;
   while (i > 0 || j > 0) {
@@ -47,7 +62,7 @@ function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean 
       result.unshift({ text: aChars[i - 1], diff: false });
       i--; j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      j--; // b has extra char, skip (not shown in a's tokens)
+      j--; // b has extra char, skip
     } else {
       result.unshift({ text: aChars[i - 1], diff: true });
       i--;
@@ -292,7 +307,7 @@ export const ReadPage: React.FC = () => {
               const bookmarked  = isBookmarked(currentBookId, currentChapter, cuv.verse);
               const selected    = selectedVerse === cuv.verse;
               const ncvText     = ncv?.text || '';
-              const isDiff      = cuv.text !== ncvText;
+              const isDiff      = normalizeForCompare(cuv.text) !== normalizeForCompare(ncvText);
 
               return (
                 <div key={cuv.verse} className={`border-b border-border/30 last:border-0 ${isDiff ? '' : ''}`}>

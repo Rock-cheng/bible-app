@@ -16,39 +16,44 @@ const FONT_SIZE_MAP = {
 };
 
 // ─────────────────────────────────────────────
-// 规范化文字：用于比较（忽略标点符号、引号、空格的差异）
+// 判断字符是否为标点/空格（标点差异不高亮）
 // ─────────────────────────────────────────────
+function isPunct(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (
+    (code >= 0x0021 && code <= 0x002f) || // ASCII 标点 !"#$%&'()*+,-./ 
+    (code >= 0x003a && code <= 0x0040) || // :;<=>?@
+    (code >= 0x005b && code <= 0x0060) || // [\]^_`
+    (code >= 0x007b && code <= 0x007e) || // {|}~
+    (code >= 0x2000 && code <= 0x206f) || // 常规标点
+    (code >= 0x2e00 && code <= 0x2e7f) || // 补充标点
+    (code >= 0x3000 && code <= 0x303f) || // CJK符号和标点（。，、：；！？「」『』【】〔〕…—～·　）
+    (code >= 0xff00 && code <= 0xffef) || // 全角标点（，。！？；：）
+    (code >= 0x201c && code <= 0x201d) || // ""
+    (code >= 0x2018 && code <= 0x2019) || // ''
+    ch === '\u00a0' || // 不换行空格
+    /\s/.test(ch)     // 普通空格/换行等
+  );
+}
+
+// 规范化：仅用于 isDiff 的整体判断（非渲染）
 function normalizeForCompare(text: string): string {
-  return text
-    // 去掉所有标点符号（中英文标点、括号、引号、省略号等）
-    .replace(/[\u0021-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u007e]/g, '') // ASCII 标点
-    .replace(/[\u2000-\u206f]/g, '') // 常规标点
-    .replace(/[\u2e00-\u2e7f]/g, '') // 补充标点
-    .replace(/[\u3000-\u303f]/g, '') // CJK 符号和标点（含全角空格、。，、：；！？「」『』【】〔〕…—～·）
-    .replace(/[\uff00-\uffef]/g, '') // 全角字母和半角片假名（含全角标点 ，。！？；：）
-    .replace(/[\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f]/g, '') // 各种引号
-    // 去掉所有空格（含全角空格）
-    .replace(/[\s\u00a0\u3000]+/g, '');
+  return [...text].filter(ch => !isPunct(ch)).join('');
 }
 
 // ─────────────────────────────────────────────
-// 差异计算：找出两段文字的不同部分
-// 基于字符级别的 diff，返回 token 数组 {text, diff: bool}
+// 差异计算：对原文做字符级 LCS，标点字符强制不高亮
+// 返回 token 数组 {text, diff: bool}，渲染时保留原文
 // ─────────────────────────────────────────────
 function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean }> {
-  // 先规范化再比
-  const na = normalizeForCompare(a);
-  const nb = normalizeForCompare(b);
-  if (na === nb) return [{ text: a, diff: false }];
+  if (normalizeForCompare(a) === normalizeForCompare(b)) return [{ text: a, diff: false }];
 
-  // 用规范化文本做 LCS，再映射回原文显示
-  // 对于短文本（圣经节）性能足够
-  const aChars = [...na];
-  const bChars = [...nb];
+  // 对原文字符做 LCS
+  const aChars = [...a];
+  const bChars = [...b];
   const la = aChars.length;
   const lb = bChars.length;
 
-  // LCS 表
   const dp: number[][] = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
   for (let i = 1; i <= la; i++) {
     for (let j = 1; j <= lb; j++) {
@@ -58,7 +63,7 @@ function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean 
     }
   }
 
-  // 回溯找 LCS（基于规范化字符的 diff/no-diff 标记）
+  // 回溯，得到 a 中每个字符的 diff 标记
   const result: Array<{ text: string; diff: boolean }> = [];
   let i = la, j = lb;
   while (i > 0 || j > 0) {
@@ -66,9 +71,10 @@ function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean 
       result.unshift({ text: aChars[i - 1], diff: false });
       i--; j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      j--; // b has extra char, skip
+      j--;
     } else {
-      result.unshift({ text: aChars[i - 1], diff: true });
+      // 标点字符即使"有差异"也不高亮
+      result.unshift({ text: aChars[i - 1], diff: !isPunct(aChars[i - 1]) });
       i--;
     }
   }

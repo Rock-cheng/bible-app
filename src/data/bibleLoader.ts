@@ -11,11 +11,11 @@ export interface ChapterData {
 }
 
 // 支持的版本列表
-export type BibleVersion = 'cunps' | 'cuv';
+export type BibleVersion = 'cuv' | 'ncv';
 
-export const BIBLE_VERSIONS: Record<BibleVersion, { label: string; file: string; lang: 'zh-hans' | 'zh-hant' }> = {
-  cunps: { label: '新标点和合本（简体）', file: '/cunps.json', lang: 'zh-hans' },
-  cuv:   { label: '和合本（繁体）',        file: '/cuv.json',   lang: 'zh-hant' },
+export const BIBLE_VERSIONS: Record<BibleVersion, { label: string; shortLabel: string; file: string }> = {
+  cuv: { label: '和合本（简体）',  shortLabel: '和合本', file: '/cuv.json' },
+  ncv: { label: '新译本（简体）',  shortLabel: '新译本', file: '/ncv.json' },
 };
 
 // 各版本数据缓存
@@ -48,7 +48,7 @@ const chapterCache = new Map<string, VerseData[]>();
 export async function getChapterData(
   bookId: string,
   chapterNum: number,
-  version: BibleVersion = 'cunps'
+  version: BibleVersion = 'cuv'
 ): Promise<VerseData[]> {
   const key = `${version}_${bookId}_${chapterNum}`;
   if (chapterCache.has(key)) return chapterCache.get(key)!;
@@ -80,7 +80,7 @@ export interface SearchResult {
 export async function searchVerses(
   query: string,
   limit = 100,
-  version: BibleVersion = 'cunps'
+  version: BibleVersion = 'cuv'
 ): Promise<SearchResult[]> {
   if (!query.trim()) return [];
 

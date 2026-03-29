@@ -1,18 +1,90 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useBibleStore } from '@/store/bibleStore';
 import { getChapterData, BIBLE_VERSIONS } from '@/data/bibleLoader';
 import type { VerseData, BibleVersion } from '@/data/bibleLoader';
 import { BIBLE_BOOKS_META } from '@/data/bibleMeta';
 import {
   ChevronLeft, ChevronRight, BookmarkPlus, BookmarkCheck,
-  Highlighter, Type, Loader2, Columns2, BookOpen,
+  Highlighter, Type, Loader2, Columns2, BookOpen, X,
 } from 'lucide-react';
 
 const FONT_SIZE_MAP = {
-  sm: '0.9rem',
-  base: '1.0625rem',
-  lg: '1.25rem',
-  xl: '1.4rem',
+  sm: '0.875rem',
+  base: '1rem',
+  lg: '1.175rem',
+  xl: '1.35rem',
+};
+
+// ─────────────────────────────────────────────
+// 差异计算：找出两段文字的不同部分
+// 基于字符级别的 diff，返回 token 数组 {text, diff: bool}
+// ─────────────────────────────────────────────
+function computeDiff(a: string, b: string): Array<{ text: string; diff: boolean }> {
+  if (a === b) return [{ text: a, diff: false }];
+
+  // 简单方法：按字符分割，找最长公共子序列（LCS）
+  // 对于短文本（圣经节）性能足够
+  const aChars = [...a];
+  const bChars = [...b];
+  const la = aChars.length;
+  const lb = bChars.length;
+
+  // LCS 表
+  const dp: number[][] = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
+  for (let i = 1; i <= la; i++) {
+    for (let j = 1; j <= lb; j++) {
+      dp[i][j] = aChars[i - 1] === bChars[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // 回溯找 LCS
+  const result: Array<{ text: string; diff: boolean }> = [];
+  let i = la, j = lb;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && aChars[i - 1] === bChars[j - 1]) {
+      result.unshift({ text: aChars[i - 1], diff: false });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      j--; // b has extra char, skip (not shown in a's tokens)
+    } else {
+      result.unshift({ text: aChars[i - 1], diff: true });
+      i--;
+    }
+  }
+
+  // 合并相邻同类型块
+  const merged: Array<{ text: string; diff: boolean }> = [];
+  for (const item of result) {
+    const last = merged[merged.length - 1];
+    if (last && last.diff === item.diff) {
+      last.text += item.text;
+    } else {
+      merged.push({ ...item });
+    }
+  }
+  return merged;
+}
+
+// ─────────────────────────────────────────────
+// 渲染带差异高亮的文字
+// ─────────────────────────────────────────────
+const DiffText: React.FC<{ text: string; altText: string }> = ({ text, altText }) => {
+  const tokens = useMemo(() => computeDiff(text, altText), [text, altText]);
+  return (
+    <>
+      {tokens.map((t, i) =>
+        t.diff ? (
+          <mark key={i} className="bg-amber-200/80 dark:bg-amber-700/50 text-foreground rounded-sm px-0.5 not-italic">
+            {t.text}
+          </mark>
+        ) : (
+          <span key={i}>{t.text}</span>
+        )
+      )}
+    </>
+  );
 };
 
 // ─────────────────────────────────────────────
@@ -29,34 +101,33 @@ export const ReadPage: React.FC = () => {
     compareMode, setCompareMode,
   } = useBibleStore();
 
-  const [verses, setVerses]           = useState<VerseData[]>([]);
-  const [versesAlt, setVersesAlt]     = useState<VerseData[]>([]);
-  const [loading, setLoading]         = useState(true);
+  const [versesCuv, setVersesCuv] = useState<VerseData[]>([]);
+  const [versesNcv, setVersesNcv] = useState<VerseData[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
   const [showFontPanel, setShowFontPanel] = useState(false);
-  const [showVersionPanel, setShowVersionPanel] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const currentBook = BIBLE_BOOKS_META.find(b => b.id === currentBookId);
 
-  // 对照版本（另一本）
-  const altVersion: BibleVersion = currentVersion === 'cunps' ? 'cuv' : 'cunps';
+  // 当前显示的主版本经文
+  const mainVerses = currentVersion === 'cuv' ? versesCuv : versesNcv;
 
   const loadChapter = useCallback(async () => {
     setLoading(true);
     setSelectedVerse(null);
     try {
-      const [main, alt] = await Promise.all([
-        getChapterData(currentBookId, currentChapter, currentVersion),
-        compareMode ? getChapterData(currentBookId, currentChapter, altVersion) : Promise.resolve([]),
+      const [cuv, ncv] = await Promise.all([
+        getChapterData(currentBookId, currentChapter, 'cuv'),
+        getChapterData(currentBookId, currentChapter, 'ncv'),
       ]);
-      setVerses(main);
-      setVersesAlt(alt);
+      setVersesCuv(cuv);
+      setVersesNcv(ncv);
     } finally {
       setLoading(false);
       containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [currentBookId, currentChapter, currentVersion, compareMode, altVersion]);
+  }, [currentBookId, currentChapter]);
 
   useEffect(() => { loadChapter(); }, [loadChapter]);
 
@@ -109,7 +180,7 @@ export const ReadPage: React.FC = () => {
   const fontSizeLabels = { sm: '小', base: '中', lg: '大', xl: '特大' };
 
   return (
-    <div className="min-h-screen pb-24 flex flex-col max-w-3xl mx-auto" ref={containerRef}>
+    <div className="min-h-screen pb-24 flex flex-col max-w-4xl mx-auto" ref={containerRef}>
       {/* ── 章节导航栏 ── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background/80 sticky top-14 z-30">
         <button
@@ -132,21 +203,9 @@ export const ReadPage: React.FC = () => {
       {/* ── 工具栏 ── */}
       <div className="px-4 py-2 flex items-center justify-between border-b border-border/50 gap-2 flex-wrap">
         <span className="text-xs text-muted-foreground">
-          {currentBook?.name} {currentChapter}章 · {verses.length}节
+          {currentBook?.name} {currentChapter}章 · {mainVerses.length}节
         </span>
-
         <div className="flex items-center gap-1">
-          {/* 版本选择 */}
-          <div className="relative">
-            <button
-              onClick={() => { setShowVersionPanel(!showVersionPanel); setShowFontPanel(false); }}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded-lg hover:bg-secondary"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              {currentVersion === 'cunps' ? '简体和合本' : '繁体和合本'}
-            </button>
-          </div>
-
           {/* 对照切换 */}
           <button
             onClick={() => setCompareMode(!compareMode)}
@@ -163,7 +222,7 @@ export const ReadPage: React.FC = () => {
 
           {/* 字号 */}
           <button
-            onClick={() => { setShowFontPanel(!showFontPanel); setShowVersionPanel(false); }}
+            onClick={() => { setShowFontPanel(!showFontPanel); }}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded-lg hover:bg-secondary"
           >
             <Type className="w-3.5 h-3.5" />
@@ -172,33 +231,11 @@ export const ReadPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── 版本选择面板 ── */}
-      {showVersionPanel && (
-        <div className="px-4 py-3 bg-secondary/40 border-b border-border">
-          <p className="text-xs text-muted-foreground mb-2 font-medium">选择主译本</p>
-          <div className="flex flex-col gap-1">
-            {(Object.entries(BIBLE_VERSIONS) as [BibleVersion, typeof BIBLE_VERSIONS[BibleVersion]][]).map(([key, info]) => (
-              <button
-                key={key}
-                onClick={() => { setVersion(key); setShowVersionPanel(false); }}
-                className={`text-left text-sm px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                  currentVersion === key
-                    ? 'bg-primary text-primary-foreground font-semibold'
-                    : 'hover:bg-secondary text-foreground'
-                }`}
-              >
-                {info.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── 字号面板 ── */}
       {showFontPanel && (
         <div className="px-4 py-3 bg-secondary/50 border-b border-border flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-8">字号</span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-1">
             {fontSizeOptions.map(size => (
               <button
                 key={size}
@@ -211,23 +248,36 @@ export const ReadPage: React.FC = () => {
               </button>
             ))}
           </div>
+          <button onClick={() => setShowFontPanel(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
       {/* ── 对照模式标题栏 ── */}
       {compareMode && !loading && (
         <div className="grid grid-cols-2 divide-x divide-border border-b border-border bg-secondary/30">
-          <div className="px-3 py-1.5 text-xs font-medium text-center text-primary truncate">
-            {BIBLE_VERSIONS[currentVersion].label}
+          <div className="px-3 py-1.5 flex items-center justify-center gap-2">
+            <span className="text-xs font-semibold text-primary">{BIBLE_VERSIONS['cuv'].shortLabel}</span>
+            <span className="text-xs text-muted-foreground">和合本</span>
           </div>
-          <div className="px-3 py-1.5 text-xs font-medium text-center text-muted-foreground truncate">
-            {BIBLE_VERSIONS[altVersion].label}
+          <div className="px-3 py-1.5 flex items-center justify-center gap-2">
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{BIBLE_VERSIONS['ncv'].shortLabel}</span>
+            <span className="text-xs text-muted-foreground">新译本</span>
           </div>
         </div>
       )}
 
+      {/* ── 差异图例 ── */}
+      {compareMode && !loading && (
+        <div className="px-4 py-1.5 flex items-center gap-2 bg-amber-50/60 dark:bg-amber-950/20 border-b border-amber-200/50 dark:border-amber-800/30">
+          <mark className="bg-amber-200/80 dark:bg-amber-700/50 text-xs px-1 rounded-sm not-italic">示例</mark>
+          <span className="text-xs text-muted-foreground">= 两版本存在差异的部分</span>
+        </div>
+      )}
+
       {/* ── 经文内容 ── */}
-      <div className="flex-1 px-4 py-4">
+      <div className="flex-1 px-3 py-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -236,34 +286,48 @@ export const ReadPage: React.FC = () => {
         ) : compareMode ? (
           // ── 对照模式：双列 ──
           <div className="space-y-0">
-            {verses.map((v) => {
-              const altVerse = versesAlt.find(a => a.verse === v.verse);
-              const highlighted = isHighlighted(currentBookId, currentChapter, v.verse);
-              const bookmarked  = isBookmarked(currentBookId, currentChapter, v.verse);
-              const selected    = selectedVerse === v.verse;
+            {versesCuv.map((cuv) => {
+              const ncv        = versesNcv.find(a => a.verse === cuv.verse);
+              const highlighted = isHighlighted(currentBookId, currentChapter, cuv.verse);
+              const bookmarked  = isBookmarked(currentBookId, currentChapter, cuv.verse);
+              const selected    = selectedVerse === cuv.verse;
+              const ncvText     = ncv?.text || '';
+              const isDiff      = cuv.text !== ncvText;
 
               return (
-                <div key={v.verse}>
+                <div key={cuv.verse} className={`border-b border-border/30 last:border-0 ${isDiff ? '' : ''}`}>
                   <div
-                    onClick={() => handleVerseClick(v.verse)}
-                    className={`grid grid-cols-2 divide-x divide-border/60 cursor-pointer rounded-lg transition-all -mx-2 px-2 py-2 ${
+                    onClick={() => handleVerseClick(cuv.verse)}
+                    className={`grid grid-cols-2 divide-x divide-border/50 cursor-pointer rounded-lg transition-all -mx-1 px-1 ${
                       highlighted ? 'bg-amber-100/60 dark:bg-amber-900/20' : ''
-                    } ${selected ? 'bg-primary/10' : 'hover:bg-secondary/50'}`}
+                    } ${selected ? 'bg-primary/8 ring-1 ring-primary/20' : 'hover:bg-secondary/40'}`}
                   >
-                    {/* 主版本 */}
-                    <div className="pr-3 relative">
+                    {/* 和合本列 */}
+                    <div className={`pr-3 py-2.5 relative ${isDiff ? 'border-l-2 border-l-primary/30' : ''}`}>
                       {highlighted && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-500 rounded" />}
                       <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-foreground">
-                        <span className="verse-number">{v.verse}</span>
-                        {bookmarked && <span className="text-primary mr-1 text-xs">♦</span>}
-                        {v.text}
+                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/60 mr-1 font-sans font-normal select-none">
+                          {cuv.verse}
+                        </span>
+                        {bookmarked && <span className="text-primary mr-0.5 text-xs">♦</span>}
+                        {isDiff ? (
+                          <DiffText text={cuv.text} altText={ncvText} />
+                        ) : (
+                          cuv.text
+                        )}
                       </p>
                     </div>
-                    {/* 对照版本 */}
-                    <div className="pl-3">
-                      <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-muted-foreground">
-                        <span className="verse-number">{v.verse}</span>
-                        {altVerse?.text || '—'}
+                    {/* 新译本列 */}
+                    <div className={`pl-3 py-2.5 ${isDiff ? 'border-l-2 border-l-emerald-500/30' : ''}`}>
+                      <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-foreground/80">
+                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/60 mr-1 font-sans font-normal select-none">
+                          {cuv.verse}
+                        </span>
+                        {isDiff ? (
+                          <DiffText text={ncvText} altText={cuv.text} />
+                        ) : (
+                          ncvText || '—'
+                        )}
                       </p>
                     </div>
                   </div>
@@ -272,9 +336,17 @@ export const ReadPage: React.FC = () => {
                     <VerseActions
                       bookmarked={bookmarked}
                       highlighted={highlighted}
-                      onBookmark={() => handleBookmark(v.verse, v.text)}
-                      onHighlight={() => { toggleHighlight({ bookId: currentBookId, chapter: currentChapter, verse: v.verse }); setSelectedVerse(null); }}
-                      onCopy={() => { navigator.clipboard?.writeText(`${currentBook?.name} ${currentChapter}:${v.verse} "${v.text}"`); setSelectedVerse(null); }}
+                      onBookmark={() => handleBookmark(cuv.verse, cuv.text)}
+                      onHighlight={() => {
+                        toggleHighlight({ bookId: currentBookId, chapter: currentChapter, verse: cuv.verse });
+                        setSelectedVerse(null);
+                      }}
+                      onCopy={() => {
+                        const ref = `${currentBook?.name} ${currentChapter}:${cuv.verse}`;
+                        const text = `【和合本】${ref} "${cuv.text}"\n【新译本】${ref} "${ncvText}"`;
+                        navigator.clipboard?.writeText(text);
+                        setSelectedVerse(null);
+                      }}
                     />
                   )}
                 </div>
@@ -283,8 +355,27 @@ export const ReadPage: React.FC = () => {
           </div>
         ) : (
           // ── 单版本模式 ──
-          <div className="space-y-0">
-            {verses.map((v) => {
+          <div className="space-y-0 max-w-2xl mx-auto">
+            {/* 版本切换器（单版本模式下显示） */}
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/50">
+              <BookOpen className="w-4 h-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground mr-1">当前版本：</span>
+              {(['cuv', 'ncv'] as BibleVersion[]).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setVersion(v)}
+                  className={`text-xs px-3 py-1 rounded-full cursor-pointer transition-colors ${
+                    currentVersion === v
+                      ? 'bg-primary text-primary-foreground font-medium'
+                      : 'bg-secondary text-foreground hover:bg-secondary/80'
+                  }`}
+                >
+                  {BIBLE_VERSIONS[v].shortLabel}
+                </button>
+              ))}
+            </div>
+
+            {mainVerses.map((v) => {
               const highlighted = isHighlighted(currentBookId, currentChapter, v.verse);
               const bookmarked  = isBookmarked(currentBookId, currentChapter, v.verse);
               const selected    = selectedVerse === v.verse;
@@ -301,7 +392,9 @@ export const ReadPage: React.FC = () => {
                       <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-500 rounded" />
                     )}
                     <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-foreground">
-                      <span className="verse-number">{v.verse}</span>
+                      <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/60 mr-1 font-sans font-normal select-none">
+                        {v.verse}
+                      </span>
                       {bookmarked && <span className="text-primary mr-1 text-xs">♦</span>}
                       {v.text}
                     </p>
@@ -312,8 +405,14 @@ export const ReadPage: React.FC = () => {
                       bookmarked={bookmarked}
                       highlighted={highlighted}
                       onBookmark={() => handleBookmark(v.verse, v.text)}
-                      onHighlight={() => { toggleHighlight({ bookId: currentBookId, chapter: currentChapter, verse: v.verse }); setSelectedVerse(null); }}
-                      onCopy={() => { navigator.clipboard?.writeText(`${currentBook?.name} ${currentChapter}:${v.verse} "${v.text}"`); setSelectedVerse(null); }}
+                      onHighlight={() => {
+                        toggleHighlight({ bookId: currentBookId, chapter: currentChapter, verse: v.verse });
+                        setSelectedVerse(null);
+                      }}
+                      onCopy={() => {
+                        navigator.clipboard?.writeText(`${currentBook?.name} ${currentChapter}:${v.verse} "${v.text}"`);
+                        setSelectedVerse(null);
+                      }}
                     />
                   )}
                 </div>
@@ -358,7 +457,7 @@ interface VerseActionsProps {
 }
 
 const VerseActions: React.FC<VerseActionsProps> = ({ bookmarked, highlighted, onBookmark, onHighlight, onCopy }) => (
-  <div className="flex gap-2 mt-1 mb-2 ml-3 flex-wrap">
+  <div className="flex gap-2 mt-1 mb-2 ml-2 flex-wrap">
     <button
       onClick={onBookmark}
       className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors ${

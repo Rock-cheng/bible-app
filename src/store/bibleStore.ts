@@ -65,9 +65,9 @@ export const useBibleStore = create<BibleStore>()(
         get().addToHistory(bookId, chapter);
       },
 
-      currentVersion: 'cunps',
+      currentVersion: 'cuv',
       setVersion: (v) => set({ currentVersion: v }),
-      compareMode: false,
+      compareMode: true,
       setCompareMode: (on) => set({ compareMode: on }),
 
       theme: 'system',

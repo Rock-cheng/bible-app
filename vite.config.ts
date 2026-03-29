@@ -41,7 +41,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             // 缓存两个圣经数据文件
-            urlPattern: /\/(cuv|cunps)\.json$/i,
+            urlPattern: /\/(cuv|ncv)\.json$/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'bible-data',

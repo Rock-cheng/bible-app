@@ -37,7 +37,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onNavigate }) => {
     setLoading(true);
     setSearched(true);
     try {
-      const res = await searchVerses(q, 80, currentVersion);
+      const res = await searchVerses(q, 80, 'cuv');
       setResults(res);
     } finally {
       setLoading(false);

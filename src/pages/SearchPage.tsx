@@ -11,12 +11,18 @@ interface SearchPageProps {
 
 function highlightText(text: string, query: string): React.ReactNode {
   if (!query.trim()) return text;
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
   return parts.map((part, i) =>
     part.toLowerCase() === query.toLowerCase() ? (
-      <mark key={i} className="search-highlight">{part}</mark>
+      <mark
+        key={i}
+        className="bg-amber-300/90 dark:bg-amber-600/70 text-amber-900 dark:text-amber-100 rounded px-0.5 not-italic font-medium"
+      >
+        {part}
+      </mark>
     ) : (
-      part
+      <span key={i}>{part}</span>
     )
   );
 }
@@ -145,7 +151,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onNavigate }) => {
                       {r.bookName} {r.chapter}:{r.verse}
                     </span>
                   </div>
-                  <p className="text-sm text-foreground leading-relaxed verse-text" style={{ fontSize: '0.9rem' }}>
+                  <p className="font-serif text-foreground leading-relaxed" style={{ fontSize: '1rem', lineHeight: 1.8 }}>
                     {highlightText(r.text, query)}
                   </p>
                 </button>

@@ -309,29 +309,36 @@ export const ReadPage: React.FC = () => {
             <p className="text-sm text-muted-foreground">正在加载经文…</p>
           </div>
         ) : compareMode ? (
-          // ── 对照模式：双列 ──
+          // ── 对照模式：双列逐节配对 ──
           <div className="space-y-0">
-            {versesCuv.map((cuv) => {
+            {versesCuv.map((cuv, rowIdx) => {
               const ncv        = versesNcv.find(a => a.verse === cuv.verse);
               const highlighted = isHighlighted(currentBookId, currentChapter, cuv.verse);
               const bookmarked  = isBookmarked(currentBookId, currentChapter, cuv.verse);
               const selected    = selectedVerse === cuv.verse;
               const ncvText     = ncv?.text || '';
               const isDiff      = normalizeForCompare(cuv.text) !== normalizeForCompare(ncvText);
+              // 斑马纹：偶数行（0-based）加淡底色
+              const isEvenRow   = rowIdx % 2 === 0;
 
               return (
-                <div key={cuv.verse} className={`border-b border-border/30 last:border-0 ${isDiff ? '' : ''}`}>
+                <div
+                  key={cuv.verse}
+                  className={`border-b border-border/40 last:border-0 ${
+                    isEvenRow ? 'bg-secondary/20 dark:bg-secondary/10' : ''
+                  }`}
+                >
                   <div
                     onClick={() => handleVerseClick(cuv.verse)}
-                    className={`grid grid-cols-2 divide-x divide-border/50 cursor-pointer rounded-lg transition-all -mx-1 px-1 ${
-                      highlighted ? 'bg-amber-100/60 dark:bg-amber-900/20' : ''
-                    } ${selected ? 'bg-primary/8 ring-1 ring-primary/20' : 'hover:bg-secondary/40'}`}
+                    className={`grid grid-cols-2 divide-x divide-border/60 cursor-pointer transition-all items-start ${
+                      highlighted ? 'bg-amber-100/70 dark:bg-amber-900/25' : ''
+                    } ${selected ? 'bg-primary/8 ring-1 ring-inset ring-primary/20' : 'hover:bg-primary/5'}`}
                   >
                     {/* 和合本列 */}
-                    <div className={`pr-3 py-2.5 relative ${isDiff ? 'border-l-2 border-l-primary/30' : ''}`}>
+                    <div className={`pr-3 py-3 relative ${isDiff ? 'border-l-2 border-l-primary/40' : 'border-l-2 border-l-transparent'}`}>
                       {highlighted && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-500 rounded" />}
                       <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-foreground">
-                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/60 mr-1 font-sans font-normal select-none">
+                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/50 mr-1 font-sans font-normal select-none">
                           {cuv.verse}
                         </span>
                         {bookmarked && <span className="text-primary mr-0.5 text-xs">♦</span>}
@@ -343,9 +350,9 @@ export const ReadPage: React.FC = () => {
                       </p>
                     </div>
                     {/* 新译本列 */}
-                    <div className={`pl-3 py-2.5 ${isDiff ? 'border-l-2 border-l-emerald-500/30' : ''}`}>
+                    <div className={`pl-3 py-3 ${isDiff ? 'border-l-2 border-l-emerald-500/40' : 'border-l-2 border-l-transparent'}`}>
                       <p style={{ fontSize: FONT_SIZE_MAP[fontSize], lineHeight: 1.9 }} className="font-serif text-foreground/80">
-                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/60 mr-1 font-sans font-normal select-none">
+                        <span className="inline-block min-w-[1.6em] text-xs text-muted-foreground/50 mr-1 font-sans font-normal select-none">
                           {cuv.verse}
                         </span>
                         {isDiff ? (
